@@ -39,7 +39,8 @@ export default function AttendancePage() {
   }, [currentEvent])
 
   const loadEvents = async () => {
-    const today = new Date().toISOString().split('T')[0]
+    // Use Eastern Time so "today" matches the church's timezone
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
     // Fetch events up to today (no future events), most recent first
     const { data: events } = await supabase
@@ -74,7 +75,9 @@ export default function AttendancePage() {
       return
     }
 
-    const dayOfWeek = new Date().getDay()
+    // Determine day of week in Eastern Time
+    const [y, m, d] = today.split('-').map(Number)
+    const dayOfWeek = new Date(y, m - 1, d).getDay()
     const eventName = dayOfWeek === 0 ? 'Sunday Service' : 'Midweek Service'
     const eventType = dayOfWeek === 0 ? 'sunday_service' : 'midweek'
 
