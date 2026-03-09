@@ -1,11 +1,15 @@
 'use client'
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import type { Person, Event, Attendance } from '@/lib/supabase'
 import NewVisitorSheet from '@/components/NewVisitorSheet'
 
+const QRScanner = dynamic(() => import('@/components/QRScanner'), { ssr: false })
+
 type Filter = 'all' | 'not_checked' | 'checked' | 'visitors'
+type Mode = 'roster' | 'qr'
 
 export default function AttendancePage() {
   const [people, setPeople] = useState<Person[]>([])
@@ -19,6 +23,7 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true)
   const [showEventPicker, setShowEventPicker] = useState(false)
   const [allEvents, setAllEvents] = useState<Event[]>([])
+  const [mode, setMode] = useState<Mode>('roster')
 
   // Load events and select today's
   useEffect(() => {
@@ -342,18 +347,37 @@ export default function AttendancePage() {
               </>
             )}
           </div>
-          <button
-            onClick={async () => {
-              await fetch('/api/auth', { method: 'DELETE' })
-              window.location.href = '/login'
-            }}
-            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
-            title="Lock"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMode(mode === 'roster' ? 'qr' : 'roster')}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                mode === 'qr' ? 'bg-[#3a9ca1] text-white' : 'bg-white/10'
+              }`}
+              title={mode === 'qr' ? 'Switch to roster' : 'Switch to QR scan'}
+            >
+              {mode === 'qr' ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={async () => {
+                await fetch('/api/auth', { method: 'DELETE' })
+                window.location.href = '/login'
+              }}
+              className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+              title="Lock"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -373,8 +397,18 @@ export default function AttendancePage() {
         </div>
       </header>
 
-      {/* Search */}
-      <div className="px-4 -mt-5">
+      {/* QR Scanner Mode */}
+      {mode === 'qr' && currentEvent && (
+        <div className="px-4 mt-4 pb-24">
+          <QRScanner eventId={currentEvent.id} />
+          <p className="text-center text-xs text-gray-400 mt-4">
+            Tap the list icon above to switch back to roster mode
+          </p>
+        </div>
+      )}
+
+      {/* Search (roster mode only) */}
+      {mode === 'roster' && <div className="px-4 -mt-5">
         <div className="bg-white rounded-2xl shadow-lg px-4 py-3 flex items-center gap-3">
           <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -394,10 +428,10 @@ export default function AttendancePage() {
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 px-4 mt-4 overflow-x-auto">
+      {/* Filter Tabs (roster mode only) */}
+      {mode === 'roster' && <div className="flex gap-2 px-4 mt-4 overflow-x-auto">
         {([
           { key: 'all', label: 'All' },
           { key: 'not_checked', label: 'Not Checked In' },
@@ -416,10 +450,10 @@ export default function AttendancePage() {
             {tab.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* People List */}
-      <div className="flex-1 px-4 mt-4 pb-24 space-y-2">
+      {mode === 'roster' && <div className="flex-1 px-4 mt-4 pb-24 space-y-2">
         {filteredPeople.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -491,17 +525,17 @@ export default function AttendancePage() {
             )
           })
         )}
-      </div>
+      </div>}
 
-      {/* FAB - Add Visitor */}
-      <button
+      {/* FAB - Add Visitor (roster mode only) */}
+      {mode === 'roster' && <button
         onClick={() => setShowVisitorSheet(true)}
         className="fixed bottom-6 right-6 w-16 h-16 bg-[#3a9ca1] text-white rounded-full shadow-lg flex items-center justify-center active:scale-90 transition-transform z-40"
       >
         <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
         </svg>
-      </button>
+      </button>}
 
       {/* New Visitor Sheet */}
       <NewVisitorSheet
