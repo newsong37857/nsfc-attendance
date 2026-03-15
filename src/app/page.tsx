@@ -107,6 +107,8 @@ export default function AttendancePage() {
     const { data } = await supabase
       .from('people')
       .select('id, first_name, last_name, email, phone, membership_status, created_at')
+      .is('deleted_at', null)
+      .neq('membership_status', 'inactive')
       .order('last_name')
       .order('first_name')
 
