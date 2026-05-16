@@ -42,13 +42,23 @@ export default function AttendancePage() {
     // Use Eastern Time so "today" matches the church's timezone
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
-    // Fetch recent and upcoming events (most recent first)
+    // Compute a window of prior 4 weeks and future 2 weeks
+    const [ty, tm, td] = today.split('-').map(Number)
+    const todayDate = new Date(ty, tm - 1, td)
+    const fourWeeksAgo = new Date(todayDate)
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
+    const twoWeeksOut = new Date(todayDate)
+    twoWeeksOut.setDate(twoWeeksOut.getDate() + 14)
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    // Fetch events in the window (most recent first)
     const { data: events } = await supabase
       .from('events')
       .select('*')
+      .gte('event_date', fmt(fourWeeksAgo))
+      .lte('event_date', fmt(twoWeeksOut))
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(30)
 
     // Check if today's event already exists in results
     const todayEvent = events?.find((e) => e.event_date === today)
@@ -98,6 +108,7 @@ export default function AttendancePage() {
       console.error("Failed to auto-create today's event:", insertError)
       if (events && events.length > 0) {
         setCurrentEvent(events[0])
+        setAllEvents(events)
         setToast("Could not auto-create today's event. Showing previous event.")
         setTimeout(() => setToast(null), 4000)
       } else {
