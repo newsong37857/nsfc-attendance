@@ -81,7 +81,7 @@ export default function AttendancePage() {
     const eventName = dayOfWeek === 0 ? 'Sunday Service' : 'Midweek Service'
     const eventType = dayOfWeek === 0 ? 'sunday_service' : 'midweek'
 
-    const { data: newEvent } = await supabase
+    const { data: newEvent, error: insertError } = await supabase
       .from('events')
       .insert({
         name: eventName,
@@ -95,6 +95,15 @@ export default function AttendancePage() {
     if (newEvent) {
       setCurrentEvent(newEvent)
       setAllEvents([newEvent, ...(events || [])])
+    } else {
+      console.error("Failed to auto-create today's event:", insertError)
+      if (events && events.length > 0) {
+        setCurrentEvent(events[0])
+        setToast("Could not auto-create today's event. Showing previous event.")
+        setTimeout(() => setToast(null), 4000)
+      } else {
+        setLoading(false)
+      }
     }
   }
 
@@ -413,7 +422,7 @@ export default function AttendancePage() {
       )}
 
       {/* Search (roster mode only) */}
-      {mode === 'roster' && <div className="px-4 -mt-5">
+      {mode === 'roster' && <div className="sticky top-0 z-30 px-4 -mt-5 pb-1 bg-[#fffff0]">
         <div className="bg-white rounded-2xl shadow-lg px-4 py-3 flex items-center gap-3">
           <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -475,7 +484,7 @@ export default function AttendancePage() {
               <button
                 key={person.id}
                 onClick={() => toggleCheckIn(person.id)}
-                className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-[0.98] ${
+                className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl transition-all active:scale-[0.98] ${
                   isChecked
                     ? 'bg-[#3a9ca1]/10 border-2 border-[#3a9ca1]/30'
                     : 'bg-white shadow-sm border-2 border-transparent'
@@ -483,7 +492,7 @@ export default function AttendancePage() {
               >
                 {/* Avatar */}
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                     isChecked
                       ? 'bg-[#3a9ca1] text-white'
                       : isVisitor
@@ -492,7 +501,7 @@ export default function AttendancePage() {
                   }`}
                 >
                   {isChecked ? (
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
@@ -502,7 +511,7 @@ export default function AttendancePage() {
 
                 {/* Name & Status */}
                 <div className="flex-1 text-left min-w-0">
-                  <p className={`font-semibold truncate ${isChecked ? 'text-[#1f6d73]' : 'text-[#10454f]'}`}>
+                  <p className={`text-sm font-semibold truncate ${isChecked ? 'text-[#1f6d73]' : 'text-[#10454f]'}`}>
                     {person.first_name} {person.last_name}
                   </p>
                   {isVisitor && (
@@ -514,14 +523,14 @@ export default function AttendancePage() {
 
                 {/* Check-in indicator */}
                 <div
-                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                     isChecked
                       ? 'border-[#3a9ca1] bg-[#3a9ca1]'
                       : 'border-gray-300'
                   }`}
                 >
                   {isChecked && (
-                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                     </svg>
                   )}
