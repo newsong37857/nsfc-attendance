@@ -42,11 +42,10 @@ export default function AttendancePage() {
     // Use Eastern Time so "today" matches the church's timezone
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
-    // Fetch events up to today (no future events), most recent first
+    // Fetch recent and upcoming events (most recent first)
     const { data: events } = await supabase
       .from('events')
       .select('*')
-      .lte('event_date', today)
       .order('event_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(30)
