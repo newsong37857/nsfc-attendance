@@ -66,7 +66,7 @@ export default function AttendancePage() {
       .select('*')
       .eq('event_date', today)
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (existingToday) {
       const allWithToday = [existingToday, ...(events || [])]
