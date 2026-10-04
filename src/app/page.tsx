@@ -14,7 +14,6 @@ type Mode = 'roster' | 'qr'
 export default function AttendancePage() {
   const [people, setPeople] = useState<Person[]>([])
   const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set())
-  const [attendanceMap, setAttendanceMap] = useState<Map<string, string>>(new Map()) // person_id -> attendance_id
   const [currentEvent, setCurrentEvent] = useState<Event | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -139,18 +138,11 @@ export default function AttendancePage() {
     if (!currentEvent) return
     const { data } = await supabase
       .from('attendance')
-      .select('id, person_id')
+      .select('person_id')
       .eq('event_id', currentEvent.id)
 
     if (data) {
-      const checked = new Set<string>()
-      const aMap = new Map<string, string>()
-      data.forEach((a) => {
-        checked.add(a.person_id)
-        aMap.set(a.person_id, a.id)
-      })
-      setCheckedIn(checked)
-      setAttendanceMap(aMap)
+      setCheckedIn(new Set(data.map((a) => a.person_id)))
     }
   }
 
@@ -158,33 +150,37 @@ export default function AttendancePage() {
     if (!currentEvent) return
 
     if (checkedIn.has(personId)) {
-      // Undo check-in
-      const attendanceId = attendanceMap.get(personId)
-      if (attendanceId) {
-        await supabase.from('attendance').delete().eq('id', attendanceId)
+      // Undo check-in. Confirm a row was actually removed — RLS blocks deletes
+      // silently with no error, which made undo look like it worked until refresh.
+      const { data: deleted, error } = await supabase
+        .from('attendance')
+        .delete()
+        .eq('event_id', currentEvent.id)
+        .eq('person_id', personId)
+        .select('id')
+      if (error || !deleted?.length) {
+        console.error('Failed to undo check-in:', error)
+        showToast("Couldn't undo check-in. Please try again.")
+        return
       }
       setCheckedIn((prev) => {
         const next = new Set(prev)
         next.delete(personId)
         return next
       })
-      setAttendanceMap((prev) => {
-        const next = new Map(prev)
-        next.delete(personId)
-        return next
-      })
     } else {
       // Check in
-      const { data } = await supabase
+      const { error } = await supabase
         .from('attendance')
         .insert({ event_id: currentEvent.id, person_id: personId })
-        .select('id')
-        .single()
 
-      setCheckedIn((prev) => new Set(prev).add(personId))
-      if (data) {
-        setAttendanceMap((prev) => new Map(prev).set(personId, data.id))
+      // 23505 = unique violation: already checked in (e.g. via QR on another device)
+      if (error && error.code !== '23505') {
+        console.error('Failed to check in:', error)
+        showToast("Couldn't check in. Please try again.")
+        return
       }
+      setCheckedIn((prev) => new Set(prev).add(personId))
     }
   }
 
@@ -225,16 +221,11 @@ export default function AttendancePage() {
       ))
 
       if (checkIn && currentEvent) {
-        const { data: att } = await supabase
+        await supabase
           .from('attendance')
           .insert({ event_id: currentEvent.id, person_id: newPerson.id })
-          .select('id')
-          .single()
 
         setCheckedIn((prev) => new Set(prev).add(newPerson.id))
-        if (att) {
-          setAttendanceMap((prev) => new Map(prev).set(newPerson.id, att.id))
-        }
       }
 
       showToast(`${visitor.first_name} ${visitor.last_name} added${checkIn ? ' & checked in' : ''}!`)
