@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useState } from 'react'
+import { apiGet, apiSend } from '@/lib/api'
 import type { Person, Event } from '@/lib/supabase'
 
 export default function SelfCheckIn() {
-  const [people, setPeople] = useState<Person[]>([])
   const [currentEvent, setCurrentEvent] = useState<Event | null>(null)
   const [search, setSearch] = useState('')
+  const [filtered, setFiltered] = useState<Person[]>([])
   const [loading, setLoading] = useState(true)
   const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set())
   const [checking, setChecking] = useState<string | null>(null)
@@ -17,78 +17,78 @@ export default function SelfCheckIn() {
     loadData()
   }, [])
 
-  const loadData = async () => {
-    const today = new Date().toISOString().split('T')[0]
-
-    // Find today's event
-    const { data: events } = await supabase
-      .from('events')
-      .select('*')
-      .eq('event_date', today)
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (events && events.length > 0) {
-      setCurrentEvent(events[0])
-
-      // Load attendance for this event
-      const { data: attendance } = await supabase
-        .from('attendance')
-        .select('person_id')
-        .eq('event_id', events[0].id)
-
-      if (attendance) {
-        setCheckedIn(new Set(attendance.map((a) => a.person_id)))
-      }
+  // Names are looked up on the server as the person types (2+ letters), so the
+  // directory never has to be downloaded to this device.
+  useEffect(() => {
+    const q = search.trim()
+    if (q.length < 2) {
+      setFiltered([])
+      return
     }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const { people } = await apiGet<{ people: Person[] }>(
+          `/api/people?q=${encodeURIComponent(q)}`
+        )
+        if (!cancelled) setFiltered(people)
+      } catch (err) {
+        console.error('Search failed:', err)
+      }
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [search])
 
-    // Load all people
-    const { data: allPeople } = await supabase
-      .from('people')
-      .select('id, first_name, last_name, email, phone, membership_status, created_at')
-      .order('last_name')
-      .order('first_name')
+  const loadData = async () => {
+    try {
+      // Today's event (in the church's time zone)
+      const { events } = await apiGet<{ events: Event[] }>('/api/events?scope=today')
+      const event = events[0] ?? null
+      setCurrentEvent(event)
 
-    if (allPeople) setPeople(allPeople)
+      if (event) {
+        const { personIds } = await apiGet<{ personIds: string[] }>(
+          `/api/attendance?eventId=${event.id}`
+        )
+        setCheckedIn(new Set(personIds))
+      }
+    } catch (err) {
+      console.error('Failed to load check-in:', err)
+    }
     setLoading(false)
   }
 
   const handleCheckIn = async (person: Person) => {
     if (!currentEvent || checking) return
     setChecking(person.id)
+    const name = `${person.first_name} ${person.last_name}`
 
     if (checkedIn.has(person.id)) {
-      setConfirmed({ name: `${person.first_name} ${person.last_name}`, already: true })
+      setConfirmed({ name, already: true })
       setChecking(null)
       setTimeout(() => setConfirmed(null), 3000)
       return
     }
 
-    const { error } = await supabase
-      .from('attendance')
-      .insert({ event_id: currentEvent.id, person_id: person.id })
-
-    setChecking(null)
-
-    if (!error) {
+    try {
+      const { alreadyCheckedIn } = await apiSend<{ alreadyCheckedIn: boolean }>(
+        '/api/attendance',
+        'POST',
+        { eventId: currentEvent.id, personId: person.id }
+      )
       setCheckedIn((prev) => new Set(prev).add(person.id))
-      setConfirmed({ name: `${person.first_name} ${person.last_name}`, already: false })
+      setConfirmed({ name, already: alreadyCheckedIn })
       setSearch('')
+    } catch (err) {
+      console.error('Check-in failed:', err)
     }
+    setChecking(null)
 
     setTimeout(() => setConfirmed(null), 3000)
   }
-
-  const filtered = useMemo(() => {
-    if (!search || search.length < 2) return []
-    const q = search.toLowerCase()
-    return people.filter(
-      (p) =>
-        p.first_name.toLowerCase().includes(q) ||
-        p.last_name.toLowerCase().includes(q) ||
-        `${p.first_name} ${p.last_name}`.toLowerCase().includes(q)
-    ).slice(0, 10)
-  }, [people, search])
 
   if (loading) {
     return (

@@ -1,16 +1,23 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { SESSION_COOKIE, isValidSession } from '@/lib/session'
 
-export function middleware(request: NextRequest) {
-  const isAuthenticated = request.cookies.get('nsfc-auth')?.value === 'true'
-  const isLoginPage = request.nextUrl.pathname === '/login'
-  const isAuthApi = request.nextUrl.pathname.startsWith('/api/auth')
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const isLoginPage = pathname === '/login'
+  const isAuthApi = pathname.startsWith('/api/auth')
 
   if (isAuthApi) {
     return NextResponse.next()
   }
 
+  const isAuthenticated = await isValidSession(request.cookies.get(SESSION_COOKIE)?.value)
+
   if (!isAuthenticated && !isLoginPage) {
+    // API calls get a 401 instead of a redirect to the login page.
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

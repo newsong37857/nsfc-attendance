@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getAdminClient } from "@/lib/supabase-admin";
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = getAdminClient();
     const { personId, eventId } = await req.json();
 
     if (!personId || !eventId) {
@@ -45,38 +41,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if already checked in
-    const { data: existing } = await supabase
+    // Atomic upsert — avoids race condition between check and insert.
+    // Relies on UNIQUE(event_id, person_id) constraint on attendance table.
+    // ignoreDuplicates: true means a conflict returns success with no row change.
+    const { data: upserted, error: upsertError } = await supabase
       .from("attendance")
+      .upsert(
+        { event_id: eventId, person_id: personId },
+        { onConflict: "event_id,person_id", ignoreDuplicates: true }
+      )
       .select("id")
-      .eq("event_id", eventId)
-      .eq("person_id", personId)
       .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        alreadyCheckedIn: true,
-        person: { first_name: person.first_name, last_name: person.last_name },
-        event: { name: event.name, event_date: event.event_date },
-      });
-    }
-
-    // Record attendance
-    const { error: insertError } = await supabase
-      .from("attendance")
-      .insert({ event_id: eventId, person_id: personId });
-
-    if (insertError) {
+    if (upsertError) {
       return NextResponse.json(
         { error: "Failed to record attendance" },
         { status: 500 }
       );
     }
 
+    // If upserted is null, the row already existed (duplicate was ignored)
+    const alreadyCheckedIn = upserted === null;
+
     return NextResponse.json({
       success: true,
-      alreadyCheckedIn: false,
+      alreadyCheckedIn,
       person: { first_name: person.first_name, last_name: person.last_name },
       event: { name: event.name, event_date: event.event_date },
     });

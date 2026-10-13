@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { supabase } from '@/lib/supabase'
-import type { Person, Event, Attendance } from '@/lib/supabase'
+import { apiGet, apiSend } from '@/lib/api'
+import type { Person, Event } from '@/lib/supabase'
 import NewVisitorSheet from '@/components/NewVisitorSheet'
 
 const QRScanner = dynamic(() => import('@/components/QRScanner'), { ssr: false })
@@ -38,81 +38,26 @@ export default function AttendancePage() {
   }, [currentEvent])
 
   const loadEvents = async () => {
-    // Use Eastern Time so "today" matches the church's timezone
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-
-    // Compute a window of prior 4 weeks and future 2 weeks
-    const [ty, tm, td] = today.split('-').map(Number)
-    const todayDate = new Date(ty, tm - 1, td)
-    const fourWeeksAgo = new Date(todayDate)
-    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
-    const twoWeeksOut = new Date(todayDate)
-    twoWeeksOut.setDate(twoWeeksOut.getDate() + 14)
-    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-    // Fetch events in the window (most recent first)
-    const { data: events } = await supabase
-      .from('events')
-      .select('*')
-      .gte('event_date', fmt(fourWeeksAgo))
-      .lte('event_date', fmt(twoWeeksOut))
-      .order('event_date', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    // Check if today's event already exists in results
-    const todayEvent = events?.find((e) => e.event_date === today)
-
-    if (todayEvent) {
-      setAllEvents(events!)
-      setCurrentEvent(todayEvent)
-      return
-    }
-
-    // No event for today — create one (check DB first to avoid duplicates)
-    const { data: existingToday } = await supabase
-      .from('events')
-      .select('*')
-      .eq('event_date', today)
-      .limit(1)
-      .maybeSingle()
-
-    if (existingToday) {
-      const allWithToday = [existingToday, ...(events || [])]
-      setAllEvents(allWithToday)
-      setCurrentEvent(existingToday)
-      return
-    }
-
-    // Determine day of week in Eastern Time
-    const [y, m, d] = today.split('-').map(Number)
-    const dayOfWeek = new Date(y, m - 1, d).getDay()
-    const eventName = dayOfWeek === 0 ? 'Sunday Service' : 'Midweek Service'
-    const eventType = dayOfWeek === 0 ? 'sunday_service' : 'midweek'
-
-    const { data: newEvent, error: insertError } = await supabase
-      .from('events')
-      .insert({
-        name: eventName,
-        event_type: eventType,
-        event_date: today,
-        start_time: dayOfWeek === 0 ? '10:00' : '19:00',
-      })
-      .select()
-      .single()
-
-    if (newEvent) {
-      setCurrentEvent(newEvent)
-      setAllEvents([newEvent, ...(events || [])])
-    } else {
-      console.error("Failed to auto-create today's event:", insertError)
-      if (events && events.length > 0) {
-        setCurrentEvent(events[0])
-        setAllEvents(events)
-        setToast("Could not auto-create today's event. Showing previous event.")
-        setTimeout(() => setToast(null), 4000)
+    try {
+      const { events, currentEventId, warning } = await apiGet<{
+        events: Event[]
+        currentEventId: string | null
+        warning?: string
+      }>('/api/events')
+      setAllEvents(events)
+      const current = events.find((e) => e.id === currentEventId) ?? null
+      if (current) {
+        setCurrentEvent(current)
       } else {
         setLoading(false)
       }
+      if (warning) {
+        setToast(warning)
+        setTimeout(() => setToast(null), 4000)
+      }
+    } catch (err) {
+      console.error('Failed to load events:', err)
+      setLoading(false)
     }
   }
 
@@ -122,44 +67,36 @@ export default function AttendancePage() {
   }
 
   const loadPeople = async () => {
-    const { data } = await supabase
-      .from('people')
-      .select('id, first_name, last_name, email, phone, membership_status, created_at')
-      .is('deleted_at', null)
-      .neq('membership_status', 'inactive')
-      .order('last_name')
-      .order('first_name')
-
-    if (data) setPeople(data)
+    try {
+      const { people } = await apiGet<{ people: Person[] }>('/api/people')
+      setPeople(people)
+    } catch (err) {
+      console.error('Failed to load people:', err)
+    }
     setLoading(false)
   }
 
   const loadAttendance = async () => {
     if (!currentEvent) return
-    const { data } = await supabase
-      .from('attendance')
-      .select('person_id')
-      .eq('event_id', currentEvent.id)
-
-    if (data) {
-      setCheckedIn(new Set(data.map((a) => a.person_id)))
+    try {
+      const { personIds } = await apiGet<{ personIds: string[] }>(
+        `/api/attendance?eventId=${currentEvent.id}`
+      )
+      setCheckedIn(new Set(personIds))
+    } catch (err) {
+      console.error('Failed to load attendance:', err)
     }
   }
 
   const toggleCheckIn = async (personId: string) => {
     if (!currentEvent) return
+    const ids = { eventId: currentEvent.id, personId }
 
     if (checkedIn.has(personId)) {
-      // Undo check-in. Confirm a row was actually removed — RLS blocks deletes
-      // silently with no error, which made undo look like it worked until refresh.
-      const { data: deleted, error } = await supabase
-        .from('attendance')
-        .delete()
-        .eq('event_id', currentEvent.id)
-        .eq('person_id', personId)
-        .select('id')
-      if (error || !deleted?.length) {
-        console.error('Failed to undo check-in:', error)
+      try {
+        await apiSend('/api/attendance', 'DELETE', ids)
+      } catch (err) {
+        console.error('Failed to undo check-in:', err)
         showToast("Couldn't undo check-in. Please try again.")
         return
       }
@@ -169,14 +106,11 @@ export default function AttendancePage() {
         return next
       })
     } else {
-      // Check in
-      const { error } = await supabase
-        .from('attendance')
-        .insert({ event_id: currentEvent.id, person_id: personId })
-
-      // 23505 = unique violation: already checked in (e.g. via QR on another device)
-      if (error && error.code !== '23505') {
-        console.error('Failed to check in:', error)
+      // Already checked in elsewhere (e.g. via QR) counts as success.
+      try {
+        await apiSend('/api/attendance', 'POST', ids)
+      } catch (err) {
+        console.error('Failed to check in:', err)
         showToast("Couldn't check in. Please try again.")
         return
       }
@@ -195,41 +129,26 @@ export default function AttendancePage() {
     },
     checkIn: boolean
   ) => {
-    const notes = [
-      visitor.visitor_type !== 'first_time' ? `Type: ${visitor.visitor_type}` : 'First time visitor',
-      visitor.referral_source ? `Referred by: ${visitor.referral_source}` : '',
-    ]
-      .filter(Boolean)
-      .join('. ')
-
-    const { data: newPerson } = await supabase
-      .from('people')
-      .insert({
-        first_name: visitor.first_name,
-        last_name: visitor.last_name,
-        phone: visitor.phone || null,
-        email: visitor.email || null,
-        membership_status: 'visitor',
-        notes: notes || null,
+    let result: { person: Person; checkedIn: boolean }
+    try {
+      result = await apiSend('/api/visitors', 'POST', {
+        ...visitor,
+        eventId: checkIn && currentEvent ? currentEvent.id : undefined,
       })
-      .select()
-      .single()
-
-    if (newPerson) {
-      setPeople((prev) => [...prev, newPerson].sort((a, b) =>
-        a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name)
-      ))
-
-      if (checkIn && currentEvent) {
-        await supabase
-          .from('attendance')
-          .insert({ event_id: currentEvent.id, person_id: newPerson.id })
-
-        setCheckedIn((prev) => new Set(prev).add(newPerson.id))
-      }
-
-      showToast(`${visitor.first_name} ${visitor.last_name} added${checkIn ? ' & checked in' : ''}!`)
+    } catch (err) {
+      console.error('Failed to add visitor:', err)
+      showToast("Couldn't add the visitor. Please try again.")
+      return
     }
+
+    const newPerson = result.person
+    setPeople((prev) => [...prev, newPerson].sort((a, b) =>
+      a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name)
+    ))
+    if (result.checkedIn) {
+      setCheckedIn((prev) => new Set(prev).add(newPerson.id))
+    }
+    showToast(`${visitor.first_name} ${visitor.last_name} added${result.checkedIn ? ' & checked in' : ''}!`)
   }
 
   const showToast = (message: string) => {

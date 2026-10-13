@@ -1,20 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
+// Shared data types. The browser no longer creates a Supabase client — all
+// database access goes through the PIN-protected API routes in src/app/api,
+// which use the server-only client in src/lib/supabase-admin.ts.
 
-// Strip trailing /rest/v1/? — supabase-js appends it itself, so a value like
-// https://xxx.supabase.co/rest/v1 would otherwise produce /rest/v1/rest/v1/...
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\/rest\/v1\/?$/, '')
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
+/** What the check-in screens need to know about a person — nothing more. */
 export type Person = {
   id: string
   first_name: string
   last_name: string
-  email: string | null
-  phone: string | null
   membership_status: string
-  created_at: string
 }
 
 export type Event = {
