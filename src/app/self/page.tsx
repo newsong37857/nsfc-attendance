@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiSend } from '@/lib/api'
 import type { Person, Event } from '@/lib/supabase'
+import type { ContactPrompt } from '@/lib/contact-prompt'
+import ContactPromptSheet from '@/components/ContactPromptSheet'
 
 export default function SelfCheckIn() {
   const [currentEvent, setCurrentEvent] = useState<Event | null>(null)
@@ -12,6 +14,12 @@ export default function SelfCheckIn() {
   const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set())
   const [checking, setChecking] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState<{ name: string; already: boolean } | null>(null)
+  const [contactAsk, setContactAsk] = useState<{
+    personId: string
+    firstName: string
+    prompt: ContactPrompt
+  } | null>(null)
+  const closeContactAsk = useCallback(() => setContactAsk(null), [])
 
   useEffect(() => {
     loadData()
@@ -74,14 +82,19 @@ export default function SelfCheckIn() {
     }
 
     try {
-      const { alreadyCheckedIn } = await apiSend<{ alreadyCheckedIn: boolean }>(
-        '/api/attendance',
-        'POST',
-        { eventId: currentEvent.id, personId: person.id }
-      )
+      const { alreadyCheckedIn, contactPrompt } = await apiSend<{
+        alreadyCheckedIn: boolean
+        contactPrompt: ContactPrompt | null
+      }>('/api/attendance', 'POST', { eventId: currentEvent.id, personId: person.id, self: true })
       setCheckedIn((prev) => new Set(prev).add(person.id))
-      setConfirmed({ name, already: alreadyCheckedIn })
       setSearch('')
+      if (contactPrompt && !alreadyCheckedIn) {
+        // The prompt's own "Welcome" header stands in for the toast.
+        setContactAsk({ personId: person.id, firstName: person.first_name, prompt: contactPrompt })
+        setChecking(null)
+        return
+      }
+      setConfirmed({ name, already: alreadyCheckedIn })
     } catch (err) {
       console.error('Check-in failed:', err)
     }
@@ -239,6 +252,16 @@ export default function SelfCheckIn() {
           </div>
         )}
       </div>
+
+      {contactAsk && (
+        <ContactPromptSheet
+          key={contactAsk.personId}
+          personId={contactAsk.personId}
+          firstName={contactAsk.firstName}
+          prompt={contactAsk.prompt}
+          onClose={closeContactAsk}
+        />
+      )}
 
       {/* Confirmation toast */}
       {confirmed && (

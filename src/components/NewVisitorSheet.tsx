@@ -10,6 +10,7 @@ type Props = {
     last_name: string
     phone?: string
     email?: string
+    sms_consent?: boolean
     visitor_type: string
     referral_source?: string
   }, checkIn: boolean) => Promise<void>
@@ -20,6 +21,7 @@ export default function NewVisitorSheet({ open, onClose, onSave }: Props) {
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [smsConsent, setSmsConsent] = useState(false)
   const [visitorType, setVisitorType] = useState('first_time')
   const [referralSource, setReferralSource] = useState('')
   const [saving, setSaving] = useState(false)
@@ -29,6 +31,7 @@ export default function NewVisitorSheet({ open, onClose, onSave }: Props) {
     setLastName('')
     setPhone('')
     setEmail('')
+    setSmsConsent(false)
     setVisitorType('first_time')
     setReferralSource('')
   }
@@ -42,6 +45,7 @@ export default function NewVisitorSheet({ open, onClose, onSave }: Props) {
         last_name: lastName.trim(),
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
+        sms_consent: smsConsent && !!phone.trim(),
         visitor_type: visitorType,
         referral_source: referralSource || undefined,
       }, checkIn)
@@ -127,6 +131,17 @@ export default function NewVisitorSheet({ open, onClose, onSave }: Props) {
               placeholder="(555) 123-4567"
               className="w-full px-4 py-3 bg-gray-50 rounded-xl text-[#10454f] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#3a9ca1]/30"
             />
+            {phone.trim() && (
+              <label className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={smsConsent}
+                  onChange={(e) => setSmsConsent(e.target.checked)}
+                  className="h-4 w-4 accent-[#1f6d73]"
+                />
+                They said it&apos;s OK to text them updates
+              </label>
+            )}
           </div>
 
           {/* Email */}

@@ -11,7 +11,7 @@ function clean(value: unknown, max = 200): string | null {
 
 /**
  * POST /api/visitors
- * { first_name, last_name, phone?, email?, visitor_type, referral_source?, eventId? }
+ * { first_name, last_name, phone?, email?, sms_consent?, visitor_type, referral_source?, eventId? }
  * Adds the visitor to the directory and, if eventId is given, checks them in.
  * Returns { person } with only the fields the check-in screen shows.
  */
@@ -38,16 +38,23 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join('. ')
 
+  const phone = clean(body.phone, 40)
+  // Verbal consent the greeter recorded at the door.
+  const smsConsent = body.sms_consent === true && !!phone
+
   const supabase = getAdminClient()
   const { data: person, error } = await supabase
     .from('people')
     .insert({
       first_name: firstName,
       last_name: lastName,
-      phone: clean(body.phone, 40),
+      phone,
       email: clean(body.email, 200),
       membership_status: 'visitor',
       notes: notes || null,
+      ...(smsConsent
+        ? { sms_opt_in: true, sms_opt_in_at: new Date().toISOString(), sms_opt_in_source: 'staff' }
+        : {}),
     })
     .select('id, first_name, last_name, membership_status')
     .single()

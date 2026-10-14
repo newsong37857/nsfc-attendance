@@ -124,6 +124,7 @@ export default function AttendancePage() {
       last_name: string
       phone?: string
       email?: string
+      sms_consent?: boolean
       visitor_type: string
       referral_source?: string
     },
