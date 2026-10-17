@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       phone,
       email: clean(body.email, 200),
       membership_status: 'visitor',
+      visitor_source: 'kiosk',
       notes: notes || null,
       ...(smsConsent
         ? { sms_opt_in: true, sms_opt_in_at: new Date().toISOString(), sms_opt_in_source: 'staff' }
