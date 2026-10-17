@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase-admin";
+import { scheduleMembershipSync } from "@/lib/membership-sync";
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
 
     // If upserted is null, the row already existed (duplicate was ignored)
     const alreadyCheckedIn = upserted === null;
+
+    // Let the CRM's membership engine see the new attendance row (runs after the response).
+    scheduleMembershipSync([personId]);
 
     return NextResponse.json({
       success: true,

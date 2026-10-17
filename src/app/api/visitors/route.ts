@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase-admin'
+import { scheduleMembershipSync } from '@/lib/membership-sync'
 
 const UUID = /^[0-9a-f-]{36}$/i
 
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
       phone,
       email: clean(body.email, 200),
       membership_status: 'visitor',
+      visitor_source: 'kiosk',
       notes: notes || null,
       ...(smsConsent
         ? { sms_opt_in: true, sms_opt_in_at: new Date().toISOString(), sms_opt_in_source: 'staff' }
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
         { onConflict: 'event_id,person_id', ignoreDuplicates: true }
       )
     checkedIn = !attendError
+    if (checkedIn) scheduleMembershipSync([person.id])
   }
 
   return NextResponse.json({ person, checkedIn })
