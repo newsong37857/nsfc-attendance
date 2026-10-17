@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase-admin'
 import { getContactPrompt } from '@/lib/contact-prompt'
+import { scheduleMembershipSync } from '@/lib/membership-sync'
 
 const UUID = /^[0-9a-f-]{36}$/i
 
@@ -49,6 +50,9 @@ export async function POST(req: NextRequest) {
     .select('id')
     .maybeSingle()
   if (error) return NextResponse.json({ error: 'Could not check in' }, { status: 500 })
+  // Let the CRM's membership engine see the new attendance row (visitor → attendee
+  // at 3 events). Runs after the response; also heals an earlier failed sync.
+  scheduleMembershipSync([ids.personId])
   // No row back means they were already checked in.
   const contactPrompt = ids.self ? await getContactPrompt(supabase, ids.personId) : null
   return NextResponse.json({ success: true, alreadyCheckedIn: data === null, contactPrompt })
@@ -68,5 +72,7 @@ export async function DELETE(req: NextRequest) {
   if (error || !data?.length) {
     return NextResponse.json({ error: 'Could not undo check-in' }, { status: 500 })
   }
+  // One event fewer may move them back (attendee → visitor, visitor → new contact).
+  scheduleMembershipSync([ids.personId])
   return NextResponse.json({ success: true })
 }

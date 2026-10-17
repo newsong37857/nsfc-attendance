@@ -1,3 +1,19 @@
+# NSFC check-in kiosk
+
+Sunday check-in app for New Song Fellowship Church. Greeters (or people themselves, via `/self` and QR codes) check people in against the events in the shared NSFC database. Simple PIN login; every database call goes through an API route the signed PIN session protects.
+
+## Configuration
+
+Set these in `.env.local` locally and on the Vercel project:
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — the shared NSFC database (server-side only; nothing talks to Supabase from the browser).
+- `APP_PIN` — the PIN greeters enter.
+- `MEMBERSHIP_SYNC_SECRET` — shared secret for the CRM's `POST /api/membership/recalculate`. After every check-in, undo, QR check-in or new-visitor add, the kiosk asks the CRM to re-run its membership engine for that person (0 events = new contact, 1–2 = visitor, 3+ = attendee), so regulars stop stalling at "visitor". Must equal `MEMBERSHIP_SYNC_SECRET` on the CRM project. If unset, check-ins still work but statuses are not updated (a warning is logged).
+- `CRM_BASE_URL` — optional; defaults to `https://app.newsongtn.cc`.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` — optional; sends the carrier-required confirmation text when someone agrees to texts at check-in.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
