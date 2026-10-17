@@ -22,6 +22,8 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true)
   const [showEventPicker, setShowEventPicker] = useState(false)
   const [allEvents, setAllEvents] = useState<Event[]>([])
+  // Today's date in the church's time zone, from the server (not the device's UTC clock).
+  const [today, setToday] = useState<string>('')
   const [mode, setMode] = useState<Mode>('roster')
 
   // Load events and select today's
@@ -39,12 +41,14 @@ export default function AttendancePage() {
 
   const loadEvents = async () => {
     try {
-      const { events, currentEventId, warning } = await apiGet<{
+      const { events, currentEventId, today, warning } = await apiGet<{
         events: Event[]
         currentEventId: string | null
+        today: string
         warning?: string
       }>('/api/events')
       setAllEvents(events)
+      setToday(today)
       const current = events.find((e) => e.id === currentEventId) ?? null
       if (current) {
         setCurrentEvent(current)
@@ -247,7 +251,6 @@ export default function AttendancePage() {
                     {allEvents.map((event) => {
                       const isSelected = currentEvent?.id === event.id
                       const eventDate = new Date(event.event_date + 'T12:00:00')
-                      const today = new Date().toISOString().split('T')[0]
                       const isToday = event.event_date === today
                       return (
                         <button
