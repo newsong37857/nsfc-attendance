@@ -5,11 +5,19 @@ import dynamic from 'next/dynamic'
 import { apiGet, apiSend } from '@/lib/api'
 import type { Person, Event } from '@/lib/supabase'
 import NewVisitorSheet from '@/components/NewVisitorSheet'
+import type { WelcomeNote } from '@/lib/welcome'
 
 const QRScanner = dynamic(() => import('@/components/QRScanner'), { ssr: false })
 
 type Filter = 'all' | 'not_checked' | 'checked' | 'visitors'
 type Mode = 'roster' | 'qr'
+type Cue = { name: string; note: WelcomeNote }
+
+const CUE_MS = 6000
+
+function noteLabel(note: WelcomeNote) {
+  return note.kind === 'first' ? 'First time' : note.weeks >= 52 ? 'Back after a year+' : `Back after ${note.weeks} weeks`
+}
 
 export default function AttendancePage() {
   const [people, setPeople] = useState<Person[]>([])
@@ -25,6 +33,9 @@ export default function AttendancePage() {
   // Today's date in the church's time zone, from the server (not the device's UTC clock).
   const [today, setToday] = useState<string>('')
   const [mode, setMode] = useState<Mode>('roster')
+  // First-timers and people back after time away, for the volunteer to greet.
+  const [notes, setNotes] = useState<Record<string, WelcomeNote>>({})
+  const [cue, setCue] = useState<Cue | null>(null)
 
   // Load events and select today's
   useEffect(() => {
@@ -83,10 +94,11 @@ export default function AttendancePage() {
   const loadAttendance = async () => {
     if (!currentEvent) return
     try {
-      const { personIds } = await apiGet<{ personIds: string[] }>(
+      const { personIds, notes } = await apiGet<{ personIds: string[]; notes?: Record<string, WelcomeNote> }>(
         `/api/attendance?eventId=${currentEvent.id}`
       )
       setCheckedIn(new Set(personIds))
+      setNotes(notes ?? {})
     } catch (err) {
       console.error('Failed to load attendance:', err)
     }
@@ -109,16 +121,28 @@ export default function AttendancePage() {
         next.delete(personId)
         return next
       })
+      setNotes((prev) => {
+        const next = { ...prev }
+        delete next[personId]
+        return next
+      })
     } else {
       // Already checked in elsewhere (e.g. via QR) counts as success.
+      let note: WelcomeNote | null = null
       try {
-        await apiSend('/api/attendance', 'POST', ids)
+        const res = await apiSend<{ note?: WelcomeNote | null }>('/api/attendance', 'POST', ids)
+        note = res.note ?? null
       } catch (err) {
         console.error('Failed to check in:', err)
         showToast("Couldn't check in. Please try again.")
         return
       }
       setCheckedIn((prev) => new Set(prev).add(personId))
+      if (note) {
+        const person = people.find((p) => p.id === personId)
+        setNotes((prev) => ({ ...prev, [personId]: note }))
+        if (person) showCue({ name: person.first_name, note })
+      }
     }
   }
 
@@ -152,14 +176,40 @@ export default function AttendancePage() {
     ))
     if (result.checkedIn) {
       setCheckedIn((prev) => new Set(prev).add(newPerson.id))
+      if (currentEvent?.event_date === today) {
+        const note: WelcomeNote = { kind: 'first' }
+        setNotes((prev) => ({ ...prev, [newPerson.id]: note }))
+        showCue({ name: visitor.first_name, note })
+        return
+      }
     }
     showToast(`${visitor.first_name} ${visitor.last_name} added${result.checkedIn ? ' & checked in' : ''}!`)
   }
 
   const showToast = (message: string) => {
+    setCue(null)
     setToast(message)
     setTimeout(() => setToast(null), 3000)
   }
+
+  const showCue = (next: Cue) => {
+    setToast(null)
+    setCue(next)
+    setTimeout(() => setCue((c) => (c === next ? null : c)), CUE_MS)
+  }
+
+  // Checked-in people to greet, first-timers first, then the longest away.
+  const lookOutFor = useMemo(
+    () =>
+      people
+        .filter((p) => checkedIn.has(p.id) && notes[p.id])
+        .sort((a, b) => {
+          const na = notes[a.id], nb = notes[b.id]
+          if (na.kind !== nb.kind) return na.kind === 'first' ? -1 : 1
+          return (nb.kind === 'back' ? nb.weeks : 0) - (na.kind === 'back' ? na.weeks : 0)
+        }),
+    [people, checkedIn, notes]
+  )
 
   const filteredPeople = useMemo(() => {
     let result = people
@@ -390,6 +440,33 @@ export default function AttendancePage() {
         ))}
       </div>}
 
+      {/* Look out for: who to greet this service */}
+      {mode === 'roster' && lookOutFor.length > 0 && (
+        <section aria-label="Look out for" className="mx-4 mt-4 rounded-2xl bg-white shadow-sm p-3">
+          <p className="text-xs font-semibold text-[#10454f] mb-2">Look out for</p>
+          <div className="flex flex-wrap gap-1.5">
+            {lookOutFor.map((p) => {
+              const note = notes[p.id]
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setFilter('all')
+                    setSearch(`${p.first_name} ${p.last_name}`)
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                    note.kind === 'first' ? 'bg-amber-50 text-amber-800' : 'bg-[#3a9ca1]/10 text-[#1f6d73]'
+                  }`}
+                >
+                  {p.first_name} {p.last_name}
+                  <span className="font-normal opacity-75"> · {noteLabel(note)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       {/* People List */}
       {mode === 'roster' && <div className="flex-1 px-4 mt-4 pb-24 space-y-2">
         {filteredPeople.length === 0 ? (
@@ -438,10 +515,22 @@ export default function AttendancePage() {
                   <p className={`text-sm font-semibold truncate ${isChecked ? 'text-[#1f6d73]' : 'text-[#10454f]'}`}>
                     {person.first_name} {person.last_name}
                   </p>
-                  {isVisitor && (
-                    <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                      Visitor
+                  {isChecked && notes[person.id] ? (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${
+                        notes[person.id].kind === 'first'
+                          ? 'text-amber-700 bg-amber-50'
+                          : 'text-[#1f6d73] bg-[#3a9ca1]/15'
+                      }`}
+                    >
+                      {noteLabel(notes[person.id])}
                     </span>
+                  ) : (
+                    isVisitor && (
+                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                        Visitor
+                      </span>
+                    )
                   )}
                 </div>
 
@@ -481,6 +570,29 @@ export default function AttendancePage() {
         onClose={() => setShowVisitorSheet(false)}
         onSave={handleNewVisitor}
       />
+
+      {/* Greeting cue: someone to greet just checked in */}
+      {cue && (
+        <div className="fixed bottom-24 left-4 right-4 z-50" role="status">
+          <button
+            onClick={() => setCue(null)}
+            className={`w-full text-left px-5 py-4 rounded-2xl shadow-xl toast-in border-l-8 ${
+              cue.note.kind === 'first' ? 'bg-white border-amber-400' : 'bg-white border-[#3a9ca1]'
+            }`}
+          >
+            <p className="text-lg font-bold text-[#10454f]">
+              {cue.note.kind === 'first' ? `${cue.name} is here for the first time` : `Welcome back, ${cue.name}`}
+            </p>
+            <p className="text-sm text-gray-600 mt-0.5">
+              {cue.note.kind === 'first'
+                ? 'Say hello and point them to a greeter.'
+                : cue.note.weeks >= 52
+                  ? "It's been over a year since they were here."
+                  : `First time back in ${cue.note.weeks} weeks. A warm hello goes a long way.`}
+            </p>
+          </button>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

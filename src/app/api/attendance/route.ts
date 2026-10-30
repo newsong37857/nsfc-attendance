@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase-admin'
 import { getContactPrompt } from '@/lib/contact-prompt'
 import { scheduleMembershipSync } from '@/lib/membership-sync'
+import { welcomeNotes } from '@/lib/welcome'
 
 const UUID = /^[0-9a-f-]{36}$/i
 
@@ -18,7 +19,10 @@ async function readIds(
   }
 }
 
-/** GET /api/attendance?eventId=… → { personIds } already checked in */
+/**
+ * GET /api/attendance?eventId=… → { personIds } already checked in, and
+ * { notes } for the first-timers and people back after time away among them.
+ */
 export async function GET(req: NextRequest) {
   const eventId = req.nextUrl.searchParams.get('eventId') ?? ''
   if (!UUID.test(eventId)) return NextResponse.json({ error: 'Missing eventId' }, { status: 400 })
@@ -28,13 +32,16 @@ export async function GET(req: NextRequest) {
     .select('person_id')
     .eq('event_id', eventId)
   if (error) return NextResponse.json({ error: 'Could not load attendance' }, { status: 500 })
-  return NextResponse.json({ personIds: (data ?? []).map((a) => a.person_id) })
+  const personIds = (data ?? []).map((a) => a.person_id as string)
+  const notes = await welcomeNotes(getAdminClient(), eventId, personIds).catch(() => ({}))
+  return NextResponse.json({ personIds, notes })
 }
 
 /**
  * POST /api/attendance { eventId, personId, self? } → check in (idempotent).
  * Self check-ins also get back a contactPrompt when we're missing their phone,
- * email or text consent.
+ * email or text consent. `note` says when they're here for the first time or
+ * back after time away, so the volunteer can greet them.
  */
 export async function POST(req: NextRequest) {
   const ids = await readIds(req)
@@ -54,8 +61,16 @@ export async function POST(req: NextRequest) {
   // at 3 events). Runs after the response; also heals an earlier failed sync.
   scheduleMembershipSync([ids.personId])
   // No row back means they were already checked in.
-  const contactPrompt = ids.self ? await getContactPrompt(supabase, ids.personId) : null
-  return NextResponse.json({ success: true, alreadyCheckedIn: data === null, contactPrompt })
+  const [contactPrompt, notes] = await Promise.all([
+    ids.self ? getContactPrompt(supabase, ids.personId) : null,
+    welcomeNotes(supabase, ids.eventId, [ids.personId]).catch(() => ({} as Record<string, never>)),
+  ])
+  return NextResponse.json({
+    success: true,
+    alreadyCheckedIn: data === null,
+    contactPrompt,
+    note: notes[ids.personId] ?? null,
+  })
 }
 
 /** DELETE /api/attendance { eventId, personId } → undo a check-in */
