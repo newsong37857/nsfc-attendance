@@ -585,7 +585,7 @@ export default function AttendancePage() {
             </p>
             <p className="text-sm text-gray-600 mt-0.5">
               {cue.note.kind === 'first'
-                ? 'Say hello and point them to a greeter.'
+                ? 'Introduce yourself and help them find their way around.'
                 : cue.note.weeks >= 52
                   ? "It's been over a year since they were here."
                   : `First time back in ${cue.note.weeks} weeks. A warm hello goes a long way.`}
