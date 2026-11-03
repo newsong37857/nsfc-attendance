@@ -52,3 +52,62 @@ body {
 .toast-in {
   animation: toastIn 0.3s ease-out;
 }
+
+/* ---- Kids check-in (see docs/kids-design-notes.md) ---- */
+
+/* The pickup stub: a ticket with a perforation between the children and the code. */
+.kids-stub {
+  --notch: 22px;
+  position: relative;
+  background: #10454f;
+  color: #fffff0;
+  border-radius: 28px;
+  box-shadow: 0 18px 40px -18px rgba(16, 69, 79, 0.55);
+}
+.kids-stub-perforation {
+  position: relative;
+  width: 0;
+  border-left: 3px dotted rgba(255, 255, 240, 0.55);
+}
+.kids-stub-perforation::before,
+.kids-stub-perforation::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--notch) / -2 - 1.5px);
+  width: var(--notch);
+  height: var(--notch);
+  border-radius: 50%;
+  background: #fffff0;
+}
+.kids-stub-perforation::before { top: calc(var(--notch) / -2 - 28px); }
+.kids-stub-perforation::after { bottom: calc(var(--notch) / -2 - 28px); }
+.kids-code {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+@keyframes stubIn {
+  from { transform: translateY(48px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.kids-stub-in { animation: stubIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kids-stub-in, .slide-up, .fade-in, .toast-in { animation: none; }
+}
+
+/* Large, forgiving keys for one free hand. */
+.kids-key {
+  min-height: 88px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 2px solid #cfe3e1;
+  color: #10454f;
+  font-size: 2.25rem;
+  font-weight: 600;
+  touch-action: manipulation;
+}
+.kids-key:active { background: #e8f2f1; border-color: #3a9ca1; }
+.kids-key:focus-visible, .kids-focus:focus-visible { outline: 4px solid #3a9ca1; outline-offset: 3px; }

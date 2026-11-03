@@ -18,7 +18,10 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
     }
-    return NextResponse.redirect(new URL('/login', request.url))
+    // Come back to the same screen after the PIN (the kids tablet lives on /kids).
+    const login = new URL('/login', request.url)
+    if (pathname !== '/') login.searchParams.set('next', pathname)
+    return NextResponse.redirect(login)
   }
 
   if (isAuthenticated && isLoginPage) {
