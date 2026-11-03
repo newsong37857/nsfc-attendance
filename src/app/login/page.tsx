@@ -21,7 +21,9 @@ export default function LoginPage() {
     })
 
     if (res.ok) {
-      router.push('/')
+      // Only same-site paths, so a crafted link can't send the device elsewhere.
+      const next = new URLSearchParams(window.location.search).get('next') ?? '/'
+      router.push(/^\/(?!\/)/.test(next) ? next : '/')
       router.refresh()
     } else {
       setError('Invalid PIN')

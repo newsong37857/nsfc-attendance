@@ -4,6 +4,19 @@ import { getAdminClient } from '@/lib/supabase-admin'
 // Only what the check-in screens display. No contact details, addresses or notes.
 const PERSON_FIELDS = 'id, first_name, last_name, membership_status'
 
+type Row = { id: string }
+
+/**
+ * Children in kids check-in are checked in (with a pickup code) on the kids
+ * tablet, never from the adult roster or self check-in.
+ */
+async function withoutChildren<T extends Row>(supabase: ReturnType<typeof getAdminClient>, people: T[]): Promise<T[]> {
+  if (people.length === 0) return people
+  const { data } = await supabase.from('kids_children').select('person_id')
+  const kids = new Set((data ?? []).map((k) => k.person_id as string))
+  return people.filter((p) => !kids.has(p.id))
+}
+
 /**
  * GET /api/people            → active roster for the staff check-in screen
  * GET /api/people?q=jo       → up to 10 name matches (self check-in search)
@@ -30,7 +43,7 @@ export async function GET(req: NextRequest) {
     }
     const { data, error } = await query.order('last_name').order('first_name').limit(10)
     if (error) return NextResponse.json({ error: 'Search failed' }, { status: 500 })
-    return NextResponse.json({ people: data ?? [] })
+    return NextResponse.json({ people: await withoutChildren(supabase, data ?? []) })
   }
 
   const { data, error } = await supabase
@@ -41,5 +54,5 @@ export async function GET(req: NextRequest) {
     .order('last_name')
     .order('first_name')
   if (error) return NextResponse.json({ error: 'Could not load people' }, { status: 500 })
-  return NextResponse.json({ people: data ?? [] })
+  return NextResponse.json({ people: await withoutChildren(supabase, data ?? []) })
 }

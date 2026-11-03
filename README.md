@@ -11,6 +11,13 @@ Set these in `.env.local` locally and on the Vercel project:
 - `MEMBERSHIP_SYNC_SECRET` — shared secret for the CRM's `POST /api/membership/recalculate`. After every check-in, undo, QR check-in or new-visitor add, the kiosk asks the CRM to re-run its membership engine for that person (0 events = new contact, 1–2 = visitor, 3+ = attendee), so regulars stop stalling at "visitor". Must equal `MEMBERSHIP_SYNC_SECRET` on the CRM project. If unset, check-ins still work but statuses are not updated (a warning is logged).
 - `CRM_BASE_URL` — optional; defaults to `https://app.newsongtn.cc`.
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_PHONE_NUMBER` — optional; sends the carrier-required confirmation text when someone agrees to texts at check-in.
+- `KIDS_LEADER_PIN` — the PIN room leaders and staff enter to release a child without a pickup code on `/kids/room`. Keep it different from `APP_PIN`. If unset, overrides are refused.
+
+## Kids check-in
+
+- **`/kids`** — the kids hallway tablet. A parent enters the last 4 digits of their phone (or searches by name, or adds their family the first Sunday), picks who's staying, and gets one pickup code for those children. A volunteer writes the code on each child's sticker; the parent photographs the screen or has it texted (the CRM sends the text, only with text consent).
+- **`/kids/room`** — the room tablet. Pick the room once; it lists today's checked-in children with photo, allergies, care notes and guardians. Type the parent's code to release; "No code?" releases with the leader PIN, the leader's name and a reason, all logged.
+- Each kids check-in writes `kids_checkins` and `attendance` (child, and the parent unless they untick it), then the membership sync. Children are left out of the adult roster and self check-in. Children's records are managed in the CRM at `/dashboard/kids`. Design notes: `docs/kids-design-notes.md`.
 
 ---
 
